@@ -30,6 +30,17 @@ class SupabaseStore {
     const { data } = await this.sb.auth.getSession();
     return data.session?.user ?? null;
   }
+  async signIn(email, password) {
+    const { error } = await this.sb.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(/invalid login/i.test(error.message)
+      ? "Wrong email or password. First time here? Tap “Email me a link” to set your password." : error.message);
+  }
+  // People who came in through an invite or reset link haven't chosen a password yet.
+  needsPassword(user) { return !user?.user_metadata?.has_password; }
+  async setPassword(password) {
+    const { error } = await this.sb.auth.updateUser({ password, data: { has_password: true } });
+    if (error) throw new Error(error.message);
+  }
   async sendLoginLink(email) {
     const { error } = await this.sb.auth.signInWithOtp({
       email, options: { shouldCreateUser: false, emailRedirectTo: location.origin + location.pathname },
@@ -94,6 +105,7 @@ class DemoStore {
   #persist() { try { localStorage.setItem(DEMO_KEY, JSON.stringify(this.db)); } catch {} }
   async currentUser() { return { email: "demo" }; }
   onAuthChange() {}
+  needsPassword() { return false; }
   async signOut() {}
   async listBookings() { return structuredClone(this.db.bookings); }
   async listExpenses() { return structuredClone(this.db.expenses); }

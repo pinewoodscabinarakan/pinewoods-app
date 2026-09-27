@@ -72,8 +72,9 @@ const app = document.getElementById("app");
     app.innerHTML = `<div class="loading">Couldn't start: ${esc(e.message)}</div>`;
     return;
   }
-  store.onAuthChange(user => user ? start() : showLogin());
-  (await store.currentUser()) ? start() : showLogin();
+  const route = user => !user ? showLogin() : store.needsPassword(user) ? showSetPassword() : start();
+  store.onAuthChange(route);
+  route(await store.currentUser());
 })();
 
 let started = false;
@@ -99,27 +100,70 @@ function debounce(fn, ms) { let t; return () => { clearTimeout(t); t = setTimeou
 // ---------- login ----------
 function showLogin() {
   started = false;
+  if (document.getElementById("login-form")) return;
   app.innerHTML = `
   <div class="login"><form id="login-form">
     <img class="logo" src="icon.svg" alt="">
     <h1>Pinewoods</h1>
-    <p>Sign in with the email the owner invited. We'll email you a sign-in link.</p>
+    <p>Sign in with the email the owner invited.</p>
     <label for="login-email">Email</label>
     <input id="login-email" type="email" required autocomplete="email" placeholder="you@example.com">
-    <button class="btn primary" type="submit">Email me a sign-in link</button>
+    <label for="login-password" style="margin-top:12px">Password</label>
+    <input id="login-password" type="password" autocomplete="current-password">
+    <button class="btn primary" type="submit">Sign in</button>
+    <button class="btn" type="button" id="login-link">First time or forgot password? Email me a link</button>
     <div id="login-msg"></div>
   </form></div>`;
-  document.getElementById("login-form").addEventListener("submit", async e => {
+  const form = document.getElementById("login-form"), msg = document.getElementById("login-msg");
+  const email = () => document.getElementById("login-email").value.trim();
+  const fail = err => { msg.innerHTML = `<div class="error">${esc(err.message)}</div>`; };
+  form.addEventListener("submit", async e => {
     e.preventDefault();
-    const msg = document.getElementById("login-msg"), btn = e.target.querySelector("button");
-    btn.disabled = true;
+    const pw = document.getElementById("login-password").value;
+    if (!email() || !pw) return fail(new Error("Enter your email and password."));
+    const btn = form.querySelector("[type=submit]"); btn.disabled = true;
+    try { await store.signIn(email(), pw); } catch (err) { fail(err); btn.disabled = false; }
+  });
+  document.getElementById("login-link").addEventListener("click", async e => {
+    if (!email()) return fail(new Error("Enter your email first, then tap the link button."));
+    e.target.disabled = true;
     try {
-      await store.sendLoginLink(document.getElementById("login-email").value.trim());
-      msg.innerHTML = `<p class="muted" style="margin-top:14px">Check your inbox and tap the link to open Pinewoods.</p>`;
+      await store.sendLoginLink(email());
+      msg.innerHTML = `<p class="muted" style="margin-top:14px">Check your inbox and tap the link. Pinewoods will then ask you to choose a password.</p>`;
     } catch (err) {
-      msg.innerHTML = `<div class="error">${esc(err.message)}</div>`;
-      btn.disabled = false;
+      fail(/rate limit/i.test(err.message) ? new Error("Too many emails were sent in the last hour. Try again later.") : err);
+      e.target.disabled = false;
     }
+  });
+}
+
+function showSetPassword() {
+  started = false;
+  if (document.getElementById("pw-form")) return;
+  app.innerHTML = `
+  <div class="login"><form id="pw-form">
+    <img class="logo" src="icon.svg" alt="">
+    <h1>Choose a password</h1>
+    <p>You'll use it with your email to sign in from now on.</p>
+    <label for="pw-new">New password</label>
+    <input id="pw-new" type="password" autocomplete="new-password" minlength="8">
+    <label for="pw-again" style="margin-top:12px">Type it again</label>
+    <input id="pw-again" type="password" autocomplete="new-password">
+    <button class="btn primary" type="submit">Save password</button>
+    <div id="pw-msg"></div>
+  </form></div>`;
+  document.getElementById("pw-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const a = document.getElementById("pw-new").value, b = document.getElementById("pw-again").value;
+    const msg = document.getElementById("pw-msg");
+    if (a.length < 8) return msg.innerHTML = `<div class="error">Use at least 8 characters.</div>`;
+    if (a !== b) return msg.innerHTML = `<div class="error">The two passwords don't match.</div>`;
+    const btn = e.target.querySelector("button"); btn.disabled = true;
+    try {
+      await store.setPassword(a);
+      history.replaceState(null, "", location.pathname);
+      start();
+    } catch (err) { msg.innerHTML = `<div class="error">${esc(err.message)}</div>`; btn.disabled = false; }
   });
 }
 
@@ -228,7 +272,8 @@ function viewHome() {
     <div class="row"><i class="swatch" style="background:${c.color}"></i>
       <div><b>${c.name}</b><small>${nights} night${nights === 1 ? "" : "s"} · ${peso(com)} commission</small></div>
       <b class="num">${peso(inc)}</b></div>`).join("")}
-  </div>`;
+  </div>
+  ${store.mode === "team" ? `<button class="btn" data-act="sign-out" style="margin-top:24px;width:100%">Sign out</button>` : ""}`;
 }
 
 function viewCalendar() {
@@ -625,6 +670,7 @@ app.addEventListener("click", e => {
     }
     case "new-expense": return expenseForm();
     case "reset-demo": store.reset(); location.reload(); return;
+    case "sign-out": store.signOut(); return;
   }
 });
 app.addEventListener("input", e => {
