@@ -1,7 +1,9 @@
 // Data layer. Two backends with the same interface:
 //   Supabase (shared team data, sign-in required) when config.js is filled in,
 //   Demo (this browser's localStorage, seeded from the 2026 sheet) otherwise.
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
+import * as config from "./config.js";
+const { SUPABASE_URL, SUPABASE_ANON_KEY } = config;
+export const TEAM_EMAIL = config.TEAM_EMAIL || "";
 
 export class ConflictError extends Error {}
 
@@ -33,7 +35,7 @@ class SupabaseStore {
   async signIn(email, password) {
     const { error } = await this.sb.auth.signInWithPassword({ email, password });
     if (error) throw new Error(/invalid login/i.test(error.message)
-      ? "Wrong email or password. First time here? Tap “Email me a link” to set your password." : error.message);
+      ? "That password isn't right. Ask the owner for the team password." : error.message);
   }
   // People who came in through an invite or reset link haven't chosen a password yet.
   needsPassword(user) { return !user?.user_metadata?.has_password; }

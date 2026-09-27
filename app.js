@@ -1,4 +1,4 @@
-import { createStore, ConflictError } from "./store.js";
+import { createStore, ConflictError, TEAM_EMAIL } from "./store.js";
 
 // ---------- constants ----------
 const CABINS = [
@@ -105,13 +105,12 @@ function showLogin() {
   <div class="login"><form id="login-form">
     <img class="logo" src="icon.svg" alt="">
     <h1>Pinewoods</h1>
-    <p>Sign in with the email the owner invited.</p>
-    <label for="login-email">Email</label>
-    <input id="login-email" type="email" required autocomplete="email" placeholder="you@example.com">
-    <label for="login-password" style="margin-top:12px">Password</label>
+    <p>Enter the team password.</p>
+    <input id="login-email" type="hidden" value="${esc(TEAM_EMAIL)}" autocomplete="username">
+    <label for="login-password">Password</label>
     <input id="login-password" type="password" autocomplete="current-password">
     <button class="btn primary" type="submit">Sign in</button>
-    <button class="btn" type="button" id="login-link">First time or forgot password? Email me a link</button>
+    <button class="btn" type="button" id="login-link">Forgot the password? Email a reset link to the Pinewoods Gmail</button>
     <div id="login-msg"></div>
   </form></div>`;
   const form = document.getElementById("login-form"), msg = document.getElementById("login-msg");
@@ -120,16 +119,15 @@ function showLogin() {
   form.addEventListener("submit", async e => {
     e.preventDefault();
     const pw = document.getElementById("login-password").value;
-    if (!email() || !pw) return fail(new Error("Enter your email and password."));
+    if (!pw) return fail(new Error("Enter the team password."));
     const btn = form.querySelector("[type=submit]"); btn.disabled = true;
     try { await store.signIn(email(), pw); } catch (err) { fail(err); btn.disabled = false; }
   });
   document.getElementById("login-link").addEventListener("click", async e => {
-    if (!email()) return fail(new Error("Enter your email first, then tap the link button."));
     e.target.disabled = true;
     try {
       await store.sendLoginLink(email());
-      msg.innerHTML = `<p class="muted" style="margin-top:14px">Check your inbox and tap the link. Pinewoods will then ask you to choose a password.</p>`;
+      msg.innerHTML = `<p class="muted" style="margin-top:14px">Sent. Open the email in the Pinewoods Gmail and tap the link to choose a new team password.</p>`;
     } catch (err) {
       fail(/rate limit/i.test(err.message) ? new Error("Too many emails were sent in the last hour. Try again later.") : err);
       e.target.disabled = false;
@@ -143,8 +141,8 @@ function showSetPassword() {
   app.innerHTML = `
   <div class="login"><form id="pw-form">
     <img class="logo" src="icon.svg" alt="">
-    <h1>Choose a password</h1>
-    <p>You'll use it with your email to sign in from now on.</p>
+    <h1>Team password</h1>
+    <p>Choose the password everyone on the team will use to sign in.</p>
     <label for="pw-new">New password</label>
     <input id="pw-new" type="password" autocomplete="new-password" minlength="8">
     <label for="pw-again" style="margin-top:12px">Type it again</label>
