@@ -56,5 +56,8 @@ drop policy if exists "team full access" on expenses;
 create policy "team full access" on expenses
   for all to authenticated using (true) with check (true);
 
+-- Let signed-in team members use the tables through the app (row security above still applies).
+grant select, insert, update, delete on bookings, expenses to authenticated;
+
 -- Live updates so everyone's calendar refreshes when someone books.
 alter publication supabase_realtime add table bookings, expenses;
