@@ -8,7 +8,9 @@ export const TEAM_EMAIL = config.TEAM_EMAIL || "";
 export class ConflictError extends Error {}
 
 export async function createStore() {
-  if (SUPABASE_URL && SUPABASE_ANON_KEY) return new SupabaseStore(await supabaseClient());
+  // Read before the Supabase client consumes the link: invite/reset links arrive as #...&type=invite|recovery.
+  const linkType = new URLSearchParams(location.hash.slice(1)).get("type");
+  if (SUPABASE_URL && SUPABASE_ANON_KEY) return new SupabaseStore(await supabaseClient(), linkType);
   // The 2026 client data is kept out of the public site; demo mode starts empty without it.
   const seed = await import("./data/seed.js").catch(() => ({ SEED_BOOKINGS: [] }));
   return new DemoStore(seed);
@@ -26,7 +28,7 @@ const pick = (o, keys) => Object.fromEntries(keys.filter(k => k in o).map(k => [
 
 class SupabaseStore {
   mode = "team";
-  constructor(sb) { this.sb = sb; }
+  constructor(sb, linkType) { this.sb = sb; this.fromLink = ["invite", "recovery", "magiclink", "signup"].includes(linkType); }
 
   async currentUser() {
     const { data } = await this.sb.auth.getSession();
@@ -37,11 +39,12 @@ class SupabaseStore {
     if (error) throw new Error(/invalid login/i.test(error.message)
       ? "That password isn't right. Ask the owner for the team password." : error.message);
   }
-  // People who came in through an invite or reset link haven't chosen a password yet.
-  needsPassword(user) { return !user?.user_metadata?.has_password; }
+  // Arriving from an invite or reset email means it's time to choose the team password.
+  needsPassword() { return this.fromLink; }
   async setPassword(password) {
-    const { error } = await this.sb.auth.updateUser({ password, data: { has_password: true } });
+    const { error } = await this.sb.auth.updateUser({ password });
     if (error) throw new Error(error.message);
+    this.fromLink = false;
   }
   async sendLoginLink(email) {
     const { error } = await this.sb.auth.signInWithOtp({
